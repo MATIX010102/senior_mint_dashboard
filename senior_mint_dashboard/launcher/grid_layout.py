@@ -81,6 +81,7 @@ class SeniorGridWidget(QWidget):
             ("Przeglądarka Internetowa", "Otwórz strony WWW", self._launch_system_browser, 1, 1),
             ("Gry i Pasjans", "Pasjans, Mahjong", self._launch_game_selector, 1, 2),
             ("Zdjęcia i Filmy", "Kopiuj zdjęcia z telefonu", self._launch_media_transfer, 2, 0),
+            ("Zdalna Pomoc", "Poproś wnuka o pomoc", self._launch_help_dialog, 2, 1),
         ]
 
         for title, subtitle, callback, row, col in tiles_data:
@@ -108,5 +109,13 @@ class SeniorGridWidget(QWidget):
             from senior_mint_dashboard.media_transfer.ui.transfer_window import MediaTransferWindow
             dialog = MediaTransferWindow(parent=self)
             dialog.show()
+        except ImportError:
+            pass
+
+    def _launch_help_dialog(self):
+        try:
+            from senior_mint_dashboard.media_transfer.ui.transfer_window import MediaTransferWindow
+            dialog = MediaTransferWindow(parent=self)
+            dialog._show_emergency_help()
         except ImportError:
             pass
