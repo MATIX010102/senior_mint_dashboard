@@ -9,7 +9,7 @@ Ultra-lightweight, locked-down senior-friendly custom desktop environment and da
 Zaloguj się na konto z uprawnieniami administratora (`root` / `sudo`) w systemie Linux Mint i uruchom w terminalu:
 
 ```bash
-curl -sSL https://raw.githubusercontent.com/USER/senior_mint_dashboard/main/install.sh | sudo bash
+curl -sSL https://raw.githubusercontent.com/MATIX010102/senior_mint_dashboard/main/install.sh | sudo bash
 ```
 
 Instalator wykona wszystko automatycznie:
@@ -25,7 +25,7 @@ Instalator wykona wszystko automatycznie:
 Jeśli wolisz sklonować repozytorium ręcznie:
 
 ```bash
-git clone https://github.com/USER/senior_mint_dashboard.git
+git clone https://github.com/MATIX010102/senior_mint_dashboard.git
 cd senior_mint_dashboard
 sudo bash install.sh
 ```
