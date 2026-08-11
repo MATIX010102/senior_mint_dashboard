@@ -8,12 +8,14 @@ import os
 import time
 import signal
 import logging
+import fcntl
 from pathlib import Path
 
 # Setup logging BEFORE any Qt imports
 LOG_DIR = Path(os.path.expanduser("~")) / ".cache" / "senior_dashboard"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
 LOG_FILE = LOG_DIR / "dashboard.log"
+PID_FILE = LOG_DIR / "dashboard.pid"
 
 logging.basicConfig(
     level=logging.INFO,
@@ -25,12 +27,34 @@ logging.basicConfig(
 )
 logger = logging.getLogger("SeniorMintDashboard")
 
+# Global lock file handle — must stay open for the entire process lifetime
+_lock_fh = None
+
+
+def acquire_single_instance_lock():
+    """Prevent multiple dashboard instances via flock. Returns True if lock acquired."""
+    global _lock_fh
+    try:
+        _lock_fh = open(str(PID_FILE), "w")
+        fcntl.flock(_lock_fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _lock_fh.write(str(os.getpid()))
+        _lock_fh.flush()
+        return True
+    except (IOError, OSError):
+        logger.warning("Another instance is already running. Exiting.")
+        return False
+
 
 def main():
+    # Single instance guard — prevents double-launch from XFCE autostart
+    if not acquire_single_instance_lock():
+        sys.exit(0)
+
     logger.info("=" * 60)
     logger.info("Senior Mint Dashboard starting...")
     logger.info(f"Python: {sys.version}")
     logger.info(f"Platform: {sys.platform}")
+    logger.info(f"PID: {os.getpid()}")
     logger.info(f"Working dir: {os.getcwd()}")
     logger.info(f"User: {os.environ.get('USER', os.environ.get('USERNAME', 'unknown'))}")
     logger.info(f"DISPLAY: {os.environ.get('DISPLAY', 'not set')}")
@@ -84,3 +108,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
