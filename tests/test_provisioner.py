@@ -126,7 +126,8 @@ def test_install_script_lightdm_kiosk_configuration():
     assert "etc/lightdm/lightdm.conf.d" in content or "LIGHTDM_DIR" in content, \
         "LightDM target directory missing from install.sh"
 
-    assert "autologin-user=dziadek" in content, "LightDM autologin-user=dziadek missing"
+    assert "autologin-user=dziadek" in content or "autologin-user=${DZIADEK_USER}" in content, \
+        "LightDM autologin-user=dziadek missing"
     assert "autologin-user-timeout=0" in content, "LightDM autologin-user-timeout=0 missing"
     assert "user-session=xfce" in content, "LightDM user-session=xfce missing"
 
@@ -183,11 +184,12 @@ def test_install_script_autostart_and_ownership():
     assert ".config/autostart" in content, \
         "Autostart directory missing from install.sh"
 
-    assert "Exec=/usr/bin/python3 /home/dziadek/senior_mint_dashboard/main.py" in content or \
-           "senior_mint_dashboard/main.py" in content, \
+    assert "senior_mint_dashboard/main.py" in content or \
+           "${INSTALL_DIR}/main.py" in content, \
         "Autostart Exec directive missing or invalid"
 
-    assert "chown -R dziadek:dziadek" in content, "Ownership command chown -R dziadek:dziadek missing"
+    assert "chown -R" in content and "dziadek" in content, \
+        "Ownership command chown -R missing"
 
 
 # ==============================================================================

@@ -20,16 +20,27 @@ from senior_mint_dashboard.launcher.widgets.printer_widget import PrinterWidget
 
 
 class SeniorDashboardWindow(QMainWindow):
-    """Primary 1366x768 Frameless Kiosk Dashboard Window."""
+    """Primary Fullscreen Frameless Kiosk Dashboard Window."""
 
     def __init__(self):
         super().__init__()
         self.setWindowTitle(APP_NAME)
-        self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setWindowFlags(
+            Qt.WindowType.FramelessWindowHint |
+            Qt.WindowType.WindowStaysOnTopHint
+        )
         self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
 
         self._init_ui()
         self._init_version_watcher()
+
+    def keyPressEvent(self, event):
+        """Allow admin exit with Ctrl+Q (hidden shortcut for maintenance)."""
+        from PyQt6.QtCore import Qt as QtKeys
+        if event.modifiers() == QtKeys.KeyboardModifier.ControlModifier and event.key() == QtKeys.Key.Key_Q:
+            self.close()
+        super().keyPressEvent(event)
+
 
     def _init_ui(self):
         central_widget = QWidget(self)
