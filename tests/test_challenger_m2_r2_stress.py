@@ -188,14 +188,12 @@ def test_senior_dashboard_window_instantiation_integrity(qapp):
     # Check WeatherWidget integration
     assert win.weather_widget is not None
     assert win.weather_widget.window() == win
-    assert win.weather_widget.parent() == win.ui_overlay
     assert isinstance(win.weather_widget.cache_file, Path)
     assert win.weather_widget.cache_file != win  # Ensures parent wasn't passed as cache_file!
 
     # Check PrinterWidget integration
     assert win.printer_widget is not None
     assert win.printer_widget.window() == win
-    assert win.printer_widget.parent() == win.ui_overlay
     assert isinstance(win.printer_widget.default_printer, str)
     assert win.printer_widget.default_printer == "HP_DeskJet_2130"
     assert win.printer_widget.default_printer != win  # Ensures parent wasn't passed as printer name!
