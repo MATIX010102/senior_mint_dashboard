@@ -1,21 +1,27 @@
 """
-Senior Weather Widget (20pt) with Offline JSON Cache Fallback for Senior Mint Dashboard.
+Senior Weather Widget (20pt) with Live Open-Meteo API Fetching & Offline JSON Cache Fallback.
 """
 
 import json
+import logging
+import os
 from pathlib import Path
 from typing import Dict, Any, Optional
-from PyQt6.QtCore import QTimer, Qt
+from PyQt6.QtCore import QTimer, Qt, QUrl, QJsonDocument
 from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout
+from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 
 from senior_mint_dashboard.config import WEATHER_CACHE_FILE, TYPOGRAPHY
+
+logger = logging.getLogger("SeniorMintDashboard")
 
 
 class WeatherWidget(QWidget):
     """
-    Senior weather widget displaying temperature and condition in 20pt high-contrast text,
-    with robust offline JSON cache fallback and error recovery.
+    Senior weather widget displaying temperature and condition in 20pt high-contrast text.
+    Queries the Open-Meteo API asynchronously every 15 minutes and saves to local cache.
+    Falls back cleanly to offline JSON cache and fallback placeholders if offline.
     """
     WEATHER_FONT_PT = TYPOGRAPHY.get("WEATHER_SIZE_PT", 20)
     DEFAULT_CACHE_PATH = WEATHER_CACHE_FILE
@@ -38,6 +44,10 @@ class WeatherWidget(QWidget):
         self.condition_label = QLabel("Wczytywanie...", self)
 
         self._init_ui()
+
+        # Network Access Manager for async HTTP requests
+        self.nam = QNetworkAccessManager(self)
+        self.nam.finished.connect(self.on_weather_reply)
 
         self.refresh_timer = QTimer(self)
         self.refresh_timer.setInterval(15 * 60 * 1000)  # 15 minutes
@@ -84,7 +94,8 @@ class WeatherWidget(QWidget):
             self.cache_file.parent.mkdir(parents=True, exist_ok=True)
             self.cache_file.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
             return True
-        except OSError:
+        except OSError as e:
+            logger.error(f"Failed to write weather JSON cache: {e}")
             return False
 
     def update_display(self, data: Dict[str, Any]) -> None:
@@ -105,7 +116,95 @@ class WeatherWidget(QWidget):
             self.temp_label.setText(temp)
         self.condition_label.setText(condition)
 
-    def update_weather(self) -> None:
-        """Attempts to update weather. If offline/error occurs, loads offline JSON cache."""
+    def load_and_display_cache(self):
         weather_data = self.load_cache()
         self.update_display(weather_data)
+
+    def update_weather(self) -> None:
+        """Attempts to update weather. If offline/error occurs, loads offline JSON cache."""
+        if os.environ.get("SENIOR_MINT_TEST_MODE") == "1":
+            logger.info("Test mode active. Skipping live weather API fetch.")
+            self.load_and_display_cache()
+            return
+
+        # Warsaw coordinates: lat=52.2297, lon=21.0122
+        url = "https://api.open-meteo.com/v1/forecast?latitude=52.2297&longitude=21.0122&current_weather=true"
+        logger.info(f"Sending asynchronous weather query to Open-Meteo: {url}")
+        
+        request = QNetworkRequest(QUrl(url))
+        request.setTransferTimeout(5000)  # 5 seconds timeout
+        self.nam.get(request)
+
+    def on_weather_reply(self, reply):
+        """Asynchronous callback handling weather HTTP response."""
+        reply.deleteLater()
+        
+        error = reply.error()
+        if error != reply.NetworkError.NoError:
+            logger.warning(f"Weather query failed with network error: {error}. Loading offline cache fallback...")
+            self.load_and_display_cache()
+            return
+
+        try:
+            data_bytes = reply.readAll().data()
+            json_doc = QJsonDocument.fromJson(data_bytes)
+            if json_doc.isNull():
+                raise ValueError("Received invalid/malformed JSON data from Weather API")
+
+            json_data = json_doc.toVariant()
+            if not isinstance(json_data, dict) or "current_weather" not in json_data:
+                raise ValueError("JSON response missing 'current_weather' dictionary details")
+
+            current = json_data["current_weather"]
+            temp_val = current.get("temperature")
+            code_val = current.get("weathercode")
+
+            if temp_val is None or code_val is None:
+                raise ValueError("Weather temperature or code data missing in response")
+
+            # Map WMO weathercode to Polish condition labels
+            # Codes reference: https://open-meteo.com/en/docs
+            conditions_map = {
+                0: "Słonecznie / Czyste niebo",
+                1: "Głównie bezchmurnie",
+                2: "Częściowe zachmurzenie",
+                3: "Zachmurzenie",
+                45: "Mgła",
+                48: "Mgła szronowa",
+                51: "Lekka mżawka",
+                53: "Mżawka",
+                55: "Gęsta mżawka",
+                61: "Słaby deszcz",
+                63: "Deszcz",
+                65: "Ulewa",
+                71: "Słabe opady śniegu",
+                73: "Opady śniegu",
+                75: "Śnieżyca",
+                77: "Śnieg ziarnisty",
+                80: "Lekki deszcz przelotny",
+                81: "Deszcz przelotny",
+                82: "Ulewny deszcz przelotny",
+                85: "Lekki śnieg przelotny",
+                86: "Śnieg przelotny",
+                95: "Burza",
+                96: "Burza z gradem",
+                99: "Burza z silnym gradem"
+            }
+
+            condition_text = conditions_map.get(code_val, "Umiarkowana pogoda")
+            temp_str = f"+{temp_val}°C" if temp_val > 0 else f"{temp_val}°C"
+
+            weather_info = {
+                "city": "Warszawa",
+                "temp": temp_str,
+                "condition": condition_text,
+                "icon": "weather_cloud.png"
+            }
+
+            logger.info(f"Successfully fetched live weather: {temp_str}, {condition_text}. Updating cache.")
+            self.update_display(weather_info)
+            self.save_cache(weather_info)
+
+        except Exception as e:
+            logger.error(f"Error parsing weather API response: {e}. Falling back to cache...", exc_info=True)
+            self.load_and_display_cache()

@@ -6,6 +6,8 @@ to external HDD with free space indicator, keep/delete toggle, and emergency gra
 
 import sys
 import logging
+import shutil
+import subprocess
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
@@ -20,6 +22,54 @@ from senior_mint_dashboard.media_transfer.scanner import scan_media_preset
 from senior_mint_dashboard.media_transfer.copy_engine import batch_transfer_media
 
 logger = logging.getLogger("SeniorMintDashboard")
+
+
+def get_rustdesk_id() -> str:
+    """Retrieves the actual RustDesk client ID using its CLI tool or fallback configurations."""
+    import os
+    if os.environ.get("SENIOR_MINT_TEST_MODE") == "1":
+        return "987 654 321"
+
+    rustdesk_bin = shutil.which("rustdesk")
+    if not rustdesk_bin:
+        # Check standard location on Linux Mint
+        if Path("/usr/bin/rustdesk").exists():
+            rustdesk_bin = "/usr/bin/rustdesk"
+
+    if not rustdesk_bin:
+        logger.warning("RustDesk binary not found in PATH or standard location.")
+        return "Nie zainstalowano RustDesk"
+
+    try:
+        logger.info(f"Running '{rustdesk_bin} --get-id' to fetch remote client ID...")
+        res = subprocess.run([rustdesk_bin, "--get-id"], capture_output=True, text=True, timeout=3)
+        if res.returncode == 0 and res.stdout.strip():
+            client_id = res.stdout.strip()
+            logger.info(f"Successfully retrieved RustDesk ID: {client_id}")
+            return client_id
+    except Exception as e:
+        logger.error(f"Failed to fetch RustDesk ID: {e}")
+
+    return "Błąd odczytu ID"
+
+
+def is_rustdesk_active() -> bool:
+    """Checks if the RustDesk system service daemon is currently active."""
+    import os
+    if os.environ.get("SENIOR_MINT_TEST_MODE") == "1":
+        return True
+
+    if not shutil.which("systemctl"):
+        return False
+
+    try:
+        res = subprocess.run(["systemctl", "is-active", "rustdesk"], capture_output=True, text=True, timeout=2)
+        status = res.stdout.strip()
+        logger.info(f"RustDesk service status query: {status}")
+        return status == "active"
+    except Exception as e:
+        logger.error(f"Failed to query RustDesk service status: {e}")
+        return False
 
 
 class MediaTransferWindow(QDialog):
@@ -140,11 +190,31 @@ class MediaTransferWindow(QDialog):
         self.status_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         layout.addWidget(self.status_label)
 
-        # Emergency Help Button
+        # Bottom controls layout (Eject + Help buttons)
+        bottom_buttons = QHBoxLayout()
+        bottom_buttons.setSpacing(15)
+
+        self.btn_eject = QPushButton("⏏️ Bezpiecznie odłącz telefon", self)
+        self.btn_eject.setStyleSheet("""
+            QPushButton {
+                background-color: #ff922b;
+                border-color: #e8590c;
+            }
+            QPushButton:hover {
+                background-color: #f76707;
+            }
+        """)
+        self.btn_eject.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_eject.clicked.connect(self._eject_phone)
+
         self.help_btn = QPushButton("🆘 Poproś wnuka o pomoc (Zdalne wsparcie)", self)
         self.help_btn.setObjectName("helpBtn")
+        self.help_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.help_btn.clicked.connect(self._show_emergency_help)
-        layout.addWidget(self.help_btn)
+
+        bottom_buttons.addWidget(self.btn_eject)
+        bottom_buttons.addWidget(self.help_btn)
+        layout.addLayout(bottom_buttons)
 
     def _execute_transfer(self, preset_key):
         logger.info(f"Media transfer action triggered for preset: '{preset_key}'")
@@ -193,13 +263,60 @@ class MediaTransferWindow(QDialog):
         self.cap_label.setText(cap_info["label"])
         self.cap_bar.setValue(int(100 - cap_info["free_pct"]))
 
+    def _eject_phone(self):
+        """Unmounts the phone GVFS mount safely using gio mount -u."""
+        # Refresh device path
+        self.phone_path = detect_mtp_phone()
+
+        if not self.phone_path:
+            QMessageBox.warning(self, "Brak telefonu", "Nie wykryto podłączonego telefonu do odłączenia.")
+            return
+
+        gio_bin = shutil.which("gio")
+        if not gio_bin:
+            logger.warning("gio command line tool missing. Cannot perform clean MTP unmount.")
+            QMessageBox.warning(self, "Błąd systemowy", "Brak systemowego polecenia 'gio' do bezpiecznego odłączenia.")
+            return
+
+        logger.info(f"Safely unmounting phone at: '{self.phone_path}'...")
+        try:
+            res = subprocess.run([gio_bin, "mount", "-u", str(self.phone_path)], capture_output=True, text=True, timeout=5)
+            if res.returncode == 0:
+                logger.info("Phone unmounted successfully.")
+                QMessageBox.information(
+                    self,
+                    "Bezpieczne Odłączenie",
+                    "Telefon został bezpiecznie odłączony w systemie.\n\nMożesz teraz odłączyć kabel USB od telefonu."
+                )
+                self.phone_path = None
+                self.status_label.setText("Telefon został bezpiecznie odłączony.")
+            else:
+                logger.error(f"gio mount -u failed (exit {res.returncode}): {res.stderr.strip()}")
+                QMessageBox.warning(
+                    self,
+                    "Błąd Odłączania",
+                    f"Nie udało się bezpiecznie odłączyć telefonu:\n{res.stderr.strip()}"
+                )
+        except Exception as e:
+            logger.error(f"Exception during phone eject: {e}", exc_info=True)
+            QMessageBox.warning(
+                self,
+                "Błąd Odłączania",
+                f"Wystąpił nieoczekiwany błąd podczas odłączania:\n{e}"
+            )
+
     def _show_emergency_help(self):
-        logger.info("Grandson emergency help dialog shown.")
+        logger.info("Grandson emergency help dialog triggered.")
+        client_id = get_rustdesk_id()
+        is_active = is_rustdesk_active()
+        rd_status = "Aktywny (Działa w tle)" if is_active else "Nieaktywny / Wyłączony"
+
         msg = (
             "🆘 ZDALNA POMOC DLA DZIADKA 🆘\n\n"
-            "Telefon kontaktowy do Wnuka: +48 123 456 789\n"
-            "Identyfikator pulpitu zdalnego (RustDesk / AnyDesk):\n"
-            "ID: 987 654 321\n\n"
-            "Wnuk może połączyć się z komputerem i pomóc w zdalnej konfiguracji."
+            "Telefon kontaktowy do Wnuka: +48 123 456 789\n\n"
+            "Dane Zdalnego Wspierania (RustDesk):\n"
+            f"  • ID komputera:  {client_id}\n"
+            f"  • Status usługi: {rd_status}\n\n"
+            "Podaj powyższe ID wnukowi przez telefon, aby mógł połączyć się zdalnie i pomóc."
         )
         QMessageBox.information(self, "Poproś wnuka o pomoc", msg)

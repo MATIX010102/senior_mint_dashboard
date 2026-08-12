@@ -4,9 +4,11 @@ Uses a single-layer layout with wallpaper as background-image stylesheet.
 Avoids QStackedLayout transparency issues on Qt6/XCB/Linux.
 """
 
+import sys
+import os
 import logging
 from PyQt6.QtWidgets import (
-    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFileDialog
+    QMainWindow, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QFileDialog, QFrame
 )
 from PyQt6.QtCore import Qt, QFileSystemWatcher, QTimer
 from PyQt6.QtGui import QFont, QPixmap, QPalette, QBrush, QColor
@@ -110,16 +112,43 @@ class SeniorDashboardWindow(QMainWindow):
         self.clock_widget = ClockWidget(self)
         self.weather_widget = WeatherWidget(parent=self)
 
-        self.version_banner = QLabel("", self)
+        self.version_banner = QFrame(self)
         self.version_banner.setVisible(False)
         self.version_banner.setStyleSheet(f"""
-            background-color: {PALETTE['BANNER_INFO_BG']};
-            color: {PALETTE['BANNER_INFO_TEXT']};
-            font-size: 16pt;
-            font-weight: bold;
-            padding: 8px 16px;
-            border-radius: 8px;
+            QFrame {{
+                background-color: {PALETTE['BANNER_INFO_BG']};
+                border-radius: 8px;
+                border: 2px solid {PALETTE['BUTTON_BLUE']};
+            }}
         """)
+        
+        banner_layout = QHBoxLayout(self.version_banner)
+        banner_layout.setContentsMargins(12, 6, 12, 6)
+        banner_layout.setSpacing(12)
+        
+        self.banner_text = QLabel("ℹ️ Zaktualizowano program.", self.version_banner)
+        self.banner_text.setStyleSheet(f"color: {PALETTE['BANNER_INFO_TEXT']}; font-size: 14pt; font-weight: bold; border: none; background: transparent;")
+        
+        self.btn_restart = QPushButton("Uruchom ponownie", self.version_banner)
+        self.btn_restart.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {PALETTE['BACKGROUND_DARK']};
+                color: {PALETTE['TEXT_BRIGHT']};
+                font-size: 12pt;
+                font-weight: bold;
+                padding: 6px 12px;
+                border-radius: 6px;
+                border: 1px solid {PALETTE['CARD_BORDER']};
+            }}
+            QPushButton:hover {{
+                background-color: #313244;
+            }}
+        """)
+        self.btn_restart.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_restart.clicked.connect(self._restart_application)
+        
+        banner_layout.addWidget(self.banner_text)
+        banner_layout.addWidget(self.btn_restart)
 
         header_layout.addWidget(self.clock_widget)
         header_layout.addStretch()
@@ -211,5 +240,14 @@ class SeniorDashboardWindow(QMainWindow):
             self.watcher.fileChanged.connect(self._on_version_changed)
 
     def _on_version_changed(self, path):
-        self.version_banner.setText("ℹ️ Zaktualizowano program. Kliknij Odśwież, aby wczytać nowości.")
+        logger.info("Local version.json file changed. Showing update restart banner.")
+        self.banner_text.setText("ℹ️ Zaktualizowano program. Kliknij obok, aby wczytać nowości:")
         self.version_banner.setVisible(True)
+
+    def _restart_application(self):
+        """Restarts the launcher application cleanly."""
+        logger.info("Application reload requested from update banner. Restarting process...")
+        self._allow_exit = True
+        self.close()
+        # execv replaces the current python process immediately
+        os.execv(sys.executable, [sys.executable] + sys.argv)
