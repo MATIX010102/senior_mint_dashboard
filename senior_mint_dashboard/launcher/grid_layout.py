@@ -2,6 +2,7 @@
 Senior Action Tile Grid Layout for Senior Mint Dashboard.
 """
 
+import logging
 from PyQt6.QtWidgets import QWidget, QGridLayout, QFrame, QVBoxLayout, QLabel
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QFont
@@ -9,6 +10,8 @@ from PyQt6.QtGui import QFont
 from senior_mint_dashboard.config import (
     PALETTE, TYPOGRAPHY, WEB_LAUNCHERS, GAMES, BROWSER_COMMANDS, DEFAULT_BROWSER_HOMEPAGE
 )
+
+logger = logging.getLogger("SeniorMintDashboard")
 
 
 class SeniorTileButton(QFrame):
@@ -62,7 +65,7 @@ class SeniorTileButton(QFrame):
 
 
 class SeniorGridWidget(QWidget):
-    """3-Column Grid Widget organizing senior action tiles."""
+    """3x3 Grid Widget organizing senior action tiles symmetrically."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -84,38 +87,77 @@ class SeniorGridWidget(QWidget):
             ("Zdalna Pomoc", "Poproś wnuka o pomoc", self._launch_help_dialog, 2, 1),
         ]
 
+        logger.info("Initializing dashboard action tiles...")
         for title, subtitle, callback, row, col in tiles_data:
             tile = SeniorTileButton(title, subtitle, parent=self)
             tile.clicked.connect(callback)
             self.grid.addWidget(tile, row, col)
+            logger.info(f"Tile added: '{title}' at grid position ({row}, {col})")
+
+        # Dynamically retrieve and embed the PrinterWidget in the 9th slot (row 2, col 2)
+        win = self.window()
+        if win and hasattr(win, "printer_widget") and win.printer_widget is not None:
+            self.grid.addWidget(win.printer_widget, 2, 2)
+            logger.info("Embedded PrinterWidget at grid position (2, 2)")
+        else:
+            logger.warning("PrinterWidget could not be located on main window to embed in grid.")
 
     def _launch_webview(self, key):
+        logger.info(f"Launching webview preset for key: '{key}'")
         from senior_mint_dashboard.launcher.webview.browser_window import SeniorBrowserWindow
         preset = WEB_LAUNCHERS.get(key)
         if preset:
-            win = SeniorBrowserWindow(preset["url"], title=preset["title"], parent=self)
-            win.show()
+            try:
+                win = SeniorBrowserWindow(preset["url"], title=preset["title"], parent=self)
+                win.show()
+                logger.info(f"SeniorBrowserWindow shown for {preset['title']}")
+            except Exception as e:
+                logger.error(f"Error instantiating or showing SeniorBrowserWindow: {e}", exc_info=True)
+        else:
+            logger.error(f"No webview preset found for key: '{key}'")
 
     def _launch_system_browser(self):
+        logger.info(f"Launching external system browser at: {DEFAULT_BROWSER_HOMEPAGE}")
         from senior_mint_dashboard.launcher.webview.browser_window import launch_system_browser
-        launch_system_browser(DEFAULT_BROWSER_HOMEPAGE)
+        success = launch_system_browser(DEFAULT_BROWSER_HOMEPAGE)
+        if success:
+            logger.info("System browser process launched successfully.")
+        else:
+            logger.error("Failed to launch system browser process.")
 
     def _launch_game_selector(self):
-        from senior_mint_dashboard.launcher.games.game_launcher import launch_solitaire
-        launch_solitaire(self)
+        logger.info("Launching Game Selector Dialog...")
+        from senior_mint_dashboard.launcher.games.game_selector_dialog import GameSelectorDialog
+        from senior_mint_dashboard.launcher.games.game_launcher import launch_game
+        try:
+            dialog = GameSelectorDialog(self)
+            if dialog.exec():
+                if dialog.selected_game:
+                    logger.info(f"User selected game: '{dialog.selected_game}'. Launching...")
+                    launch_game(dialog.selected_game, self)
+                else:
+                    logger.info("Game selector dialog closed without selection.")
+            else:
+                logger.info("Game selector dialog cancelled.")
+        except Exception as e:
+            logger.error(f"Failed to load or execute game selector dialog: {e}", exc_info=True)
 
     def _launch_media_transfer(self):
+        logger.info("Launching Media Transfer Utility...")
         try:
             from senior_mint_dashboard.media_transfer.ui.transfer_window import MediaTransferWindow
             dialog = MediaTransferWindow(parent=self)
             dialog.show()
-        except ImportError:
-            pass
+            logger.info("MediaTransferWindow displayed.")
+        except Exception as e:
+            logger.error(f"Failed to import or show MediaTransferWindow: {e}", exc_info=True)
 
     def _launch_help_dialog(self):
+        logger.info("Emergency help action triggered.")
         try:
             from senior_mint_dashboard.media_transfer.ui.transfer_window import MediaTransferWindow
             dialog = MediaTransferWindow(parent=self)
             dialog._show_emergency_help()
-        except ImportError:
-            pass
+            logger.info("Emergency help QMessageBox shown.")
+        except Exception as e:
+            logger.error(f"Failed to show help dialog: {e}", exc_info=True)

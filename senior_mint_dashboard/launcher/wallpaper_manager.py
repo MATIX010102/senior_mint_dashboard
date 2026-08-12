@@ -4,6 +4,7 @@ Dynamic Photo Wallpaper Slideshow & Picker Engine for Senior Mint Dashboard.
 
 import os
 import shutil
+import logging
 from pathlib import Path
 from typing import List, Optional
 from PyQt6.QtCore import QTimer, Qt, pyqtSignal
@@ -13,6 +14,8 @@ from PyQt6.QtWidgets import QFileDialog, QLabel, QWidget
 from senior_mint_dashboard.config import (
     WALLPAPER_DIR, SLIDESHOW_INTERVAL_MS, FALLBACK_BACKGROUND_COLOR
 )
+
+logger = logging.getLogger("SeniorMintDashboard")
 
 
 class WallpaperManager(QLabel):
@@ -124,9 +127,10 @@ class WallpaperManager(QLabel):
         dest_path = self.wallpaper_dir / src_path.name
         try:
             if src_path.resolve() != dest_path.resolve():
+                logger.info(f"Copying new family wallpaper: from '{src_path}' to '{dest_path}'")
                 shutil.copy(src_path, dest_path)
         except Exception as e:
-            print(f"[ERROR] Copying wallpaper failed: {e}")
+            logger.error(f"Copying wallpaper failed: {e}", exc_info=True)
             return None
 
         self.set_active_wallpaper(dest_path)

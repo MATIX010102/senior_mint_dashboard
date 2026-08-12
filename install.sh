@@ -55,6 +55,18 @@ log "===> [1/9] Updating package index and installing dependencies..."
 if [ "${DRY_RUN:-0}" -eq 1 ]; then
     log "[DRY-RUN] apt-get update && apt-get install ..."
 else
+    # Enable universe repository
+    if ! grep -q "^deb.*universe" /etc/apt/sources.list /etc/apt/sources.list.d/* 2>/dev/null; then
+        log "Enabling universe repository..."
+        if command -v add-apt-repository >/dev/null 2>&1; then
+            add-apt-repository -y universe 2>&1 | tee -a "$LOGFILE" || true
+        else
+            apt-get update -qq || true
+            apt-get install -y software-properties-common 2>&1 | tee -a "$LOGFILE" || true
+            add-apt-repository -y universe 2>&1 | tee -a "$LOGFILE" || true
+        fi
+    fi
+
     apt-get update -qq || true
     apt-get install -y --no-install-recommends \
         python3-pyqt6 \
@@ -206,15 +218,25 @@ cat << 'EOF' > "${XFCE_SYS_DIR}/xfce4-keyboard-shortcuts.xml"
   <property name="commands" type="empty">
     <property name="custom" type="empty">
       <property name="&lt;Primary&gt;&lt;Alt&gt;t" type="string" value=""/>
-      <property name="&lt;Alt&gt;F4" type="string" value=""/>
+      <property name="&lt;Alt&gt;F1" type="string" value=""/>
       <property name="&lt;Alt&gt;F2" type="string" value=""/>
+      <property name="&lt;Alt&gt;F3" type="string" value=""/>
       <property name="&lt;Primary&gt;&lt;Alt&gt;Escape" type="string" value=""/>
       <property name="&lt;Primary&gt;&lt;Alt&gt;Delete" type="string" value=""/>
+      <property name="&lt;Super&gt;" type="string" value=""/>
+      <property name="&lt;Super&gt;e" type="string" value=""/>
     </property>
   </property>
   <property name="xfwm4" type="empty">
     <property name="custom" type="empty">
       <property name="&lt;Alt&gt;F4" type="string" value=""/>
+      <property name="&lt;Alt&gt;Space" type="string" value=""/>
+      <property name="&lt;Alt&gt;Tab" type="string" value=""/>
+      <property name="&lt;Alt&gt;Escape" type="string" value=""/>
+      <property name="&lt;Alt&gt;F10" type="string" value=""/>
+      <property name="&lt;Alt&gt;F9" type="string" value=""/>
+      <property name="&lt;Alt&gt;F11" type="string" value=""/>
+      <property name="&lt;Super&gt;Tab" type="string" value=""/>
     </property>
   </property>
 </channel>
@@ -223,7 +245,28 @@ chmod 644 "${XFCE_SYS_DIR}/xfce4-keyboard-shortcuts.xml"
 
 cp "${XFCE_SYS_DIR}/xfce4-keyboard-shortcuts.xml" "${XFCE_USER_DIR}/xfce4-keyboard-shortcuts.xml"
 chmod 644 "${XFCE_USER_DIR}/xfce4-keyboard-shortcuts.xml"
-log "[6/9] XFCE hotkeys neutralized."
+
+# Disable desktop right-click menu, window list menu, and desktop icons
+cat << 'EOF' > "${XFCE_SYS_DIR}/xfce4-desktop.xml"
+<?xml version="1.0" encoding="UTF-8"?>
+<channel name="xfce4-desktop" version="1.0">
+  <property name="desktop-menu" type="empty">
+    <property name="show" type="bool" value="false"/>
+  </property>
+  <property name="windowlist-menu" type="empty">
+    <property name="show" type="bool" value="false"/>
+  </property>
+  <property name="desktop-icons" type="empty">
+    <property name="style" type="int" value="0"/>
+  </property>
+</channel>
+EOF
+chmod 644 "${XFCE_SYS_DIR}/xfce4-desktop.xml"
+
+cp "${XFCE_SYS_DIR}/xfce4-desktop.xml" "${XFCE_USER_DIR}/xfce4-desktop.xml"
+chmod 644 "${XFCE_USER_DIR}/xfce4-desktop.xml"
+
+log "[6/9] XFCE hotkeys and desktop access neutralized."
 
 # ------------------------------------------------------------------------------
 # 7. Autostart Desktop Entry + Session Script

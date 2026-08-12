@@ -7,12 +7,16 @@ and mounted external USB drives under /media/dziadek/*.
 import os
 import sys
 import shutil
+import logging
 from pathlib import Path
+
+logger = logging.getLogger("SeniorMintDashboard")
 
 
 def get_current_user_uid():
     try:
-        return os.getuid()
+        uid = os.getuid()
+        return uid
     except AttributeError:
         return 1000
 
@@ -28,14 +32,18 @@ def detect_mtp_phone(custom_gvfs_path=None):
         uid = get_current_user_uid()
         gvfs_dir = Path(f"/run/user/{uid}/gvfs")
 
+    logger.info(f"Scanning for MTP phone in: '{gvfs_dir}'")
     if not gvfs_dir.exists():
+        logger.info(f"GVFS directory '{gvfs_dir}' does not exist. No phone detected.")
         return None
 
     # Matches mtp:host=* (Linux) or mtp_host=* (Windows/Tests)
     mounts = list(gvfs_dir.glob("mtp*host=*"))
     if mounts:
+        logger.info(f"Detected mounted MTP phone at: '{mounts[0]}'")
         return mounts[0]
 
+    logger.info("No active MTP mounts matching 'mtp*host=*' found.")
     return None
 
 
@@ -49,13 +57,17 @@ def detect_external_hdd(custom_media_path=None):
     else:
         media_dir = Path("/media/dziadek")
 
+    logger.info(f"Scanning for external HDD in: '{media_dir}'")
     if not media_dir.exists():
+        logger.info(f"Media mount directory '{media_dir}' does not exist. No HDD detected.")
         return None
 
     drives = [d for d in media_dir.glob("*") if d.is_dir()]
     if drives:
+        logger.info(f"Detected mounted HDD drive at: '{drives[0]}'")
         return drives[0]
 
+    logger.info("No mounted external hard drive found under media directory.")
     return None
 
 
@@ -65,6 +77,7 @@ def get_disk_capacity_info(drive_path):
     Returns dict: {'total_gb': float, 'free_gb': float, 'free_pct': float, 'color_zone': str, 'label': str}
     """
     if not drive_path or not Path(drive_path).exists():
+        logger.info("Disk capacity check skipped (drive not connected).")
         return {
             "total_gb": 0.0,
             "free_gb": 0.0,
@@ -74,6 +87,7 @@ def get_disk_capacity_info(drive_path):
         }
 
     try:
+        logger.info(f"Retrieving disk capacity for path: '{drive_path}'")
         usage = shutil.disk_usage(drive_path)
         total_gb = usage.total / (1024 ** 3)
         free_gb = usage.free / (1024 ** 3)
@@ -87,6 +101,7 @@ def get_disk_capacity_info(drive_path):
             color_zone = "red"
 
         label = f"Wolne miejsce: {free_gb:.1f} GB z {total_gb:.1f} GB ({int(free_pct)}%)"
+        logger.info(f"Disk space details: total={total_gb:.1f}GB, free={free_gb:.1f}GB ({int(free_pct)}% free). Zone={color_zone}")
 
         return {
             "total_gb": total_gb,
@@ -95,7 +110,8 @@ def get_disk_capacity_info(drive_path):
             "color_zone": color_zone,
             "label": label
         }
-    except Exception:
+    except Exception as e:
+        logger.error(f"Failed to calculate disk capacity for '{drive_path}': {e}", exc_info=True)
         return {
             "total_gb": 0.0,
             "free_gb": 0.0,

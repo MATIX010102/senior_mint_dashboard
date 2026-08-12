@@ -6,10 +6,13 @@ Lazy-loads QtWebEngine to keep startup RAM footprint <150MB.
 import sys
 import shutil
 import subprocess
+import logging
 from typing import Optional
 from PyQt6.QtWidgets import QMainWindow, QWidget, QVBoxLayout
 from PyQt6.QtCore import QUrl, Qt
 from senior_mint_dashboard.launcher.webview.senior_nav_bar import SeniorNavBar
+
+logger = logging.getLogger("SeniorMintDashboard")
 
 
 def launch_system_browser(url: str = "https://www.google.pl") -> bool:
@@ -28,10 +31,11 @@ def launch_system_browser(url: str = "https://www.google.pl") -> bool:
         browser_bin = "x-www-browser"
 
     try:
+        logger.info(f"Launching external browser for URL: '{url}'")
         subprocess.Popen([browser_bin, url])
         return True
     except Exception as e:
-        print(f"[ERROR] Failed to launch system browser '{browser_bin}': {e}")
+        logger.error(f"Failed to launch system browser '{browser_bin}': {e}", exc_info=True)
         return False
 
 
@@ -77,12 +81,19 @@ class SeniorBrowserWindow(QMainWindow):
 
         # 2. Lazy load QWebEngineView
         try:
+            logger.info("Importing PyQt6.QtWebEngineWidgets...")
             from PyQt6.QtWebEngineWidgets import QWebEngineView
+            logger.info("Import successful. Instantiating QWebEngineView...")
             self.webview = QWebEngineView(self)
             self.webview.setUrl(QUrl(self.initial_url))
             layout.addWidget(self.webview)
+            logger.info(f"QWebEngineView embedded successfully for: '{self.initial_url}'")
         except Exception as e:
-            print(f"[WARN] QtWebEngine load failed ({e}). Falling back to external browser.")
+            logger.warning(
+                f"QtWebEngine load failed ({e}). Falling back to external system browser. "
+                "Ensure python3-pyqt6.qtwebengine is installed.",
+                exc_info=True
+            )
             launch_system_browser(self.initial_url)
             self.close()
 

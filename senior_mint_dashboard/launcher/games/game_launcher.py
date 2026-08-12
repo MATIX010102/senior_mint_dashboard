@@ -5,8 +5,10 @@ Includes automatic web fallback when native binaries are missing.
 
 import shutil
 import subprocess
+import logging
 from typing import Dict, Any, Optional
 
+logger = logging.getLogger("SeniorMintDashboard")
 
 GAMES_CONFIG: Dict[str, Dict[str, str]] = {
     "solitaire": {
@@ -26,34 +28,39 @@ GAMES_CONFIG: Dict[str, Dict[str, str]] = {
 
 def launch_game(game_key: str, parent_widget: Optional[Any] = None) -> bool:
     """
-    Launches game by key ('solitaire' or 'mahjong').
+     Launches game by key ('solitaire' or 'mahjong').
     Tries native linux binary first. If missing, launches web fallback.
     """
     config = GAMES_CONFIG.get(game_key.lower())
     if not config:
-        print(f"[ERROR] Unknown game key: '{game_key}'")
+        logger.error(f"Unknown game key requested: '{game_key}'")
         return False
 
     binary = config["binary"]
     fallback_url = config["fallback_url"]
 
+    logger.info(f"Attempting to launch native game: '{binary}' ({config['title']})")
     # Check if native binary is available on PATH
     binary_path = shutil.which(binary)
     if binary_path:
         try:
+            logger.info(f"Found native game binary at: '{binary_path}'. Spawning process...")
             subprocess.Popen([binary_path])
+            logger.info(f"Native game process spawned for '{binary_path}' successfully.")
             return True
         except Exception as e:
-            print(f"[WARN] Error executing '{binary_path}': {e}. Trying web fallback.")
+            logger.warning(f"Error executing native binary '{binary_path}': {e}. Trying web fallback...", exc_info=True)
 
     # Native binary missing or failed -> Web Fallback
-    print(f"[INFO] Native game binary '{binary}' missing. Launching fallback URL: {fallback_url}")
+    logger.info(f"Native game binary '{binary}' is not available or failed to start. Launching web fallback URL: {fallback_url}")
     try:
         from senior_mint_dashboard.launcher.webview.browser_window import SeniorBrowserWindow
         win = SeniorBrowserWindow(fallback_url, title=config["title"], parent=parent_widget)
         win.show()
+        logger.info(f"Embedded web browser launched with fallback URL for '{config['title']}'")
         return True
     except Exception as e:
+        logger.error(f"Failed to launch embedded web fallback browser: {e}. Falling back to default system browser...", exc_info=True)
         from senior_mint_dashboard.launcher.webview.browser_window import launch_system_browser
         return launch_system_browser(fallback_url)
 

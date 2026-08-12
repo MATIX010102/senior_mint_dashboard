@@ -5,6 +5,7 @@ to external HDD with free space indicator, keep/delete toggle, and emergency gra
 """
 
 import sys
+import logging
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QProgressBar,
@@ -17,6 +18,8 @@ from senior_mint_dashboard.media_transfer.detector import (
 )
 from senior_mint_dashboard.media_transfer.scanner import scan_media_preset
 from senior_mint_dashboard.media_transfer.copy_engine import batch_transfer_media
+
+logger = logging.getLogger("SeniorMintDashboard")
 
 
 class MediaTransferWindow(QDialog):
@@ -61,6 +64,7 @@ class MediaTransferWindow(QDialog):
             }
         """)
 
+        logger.info("Initializing MediaTransferWindow...")
         self.phone_path = detect_mtp_phone()
         self.hdd_path = detect_external_hdd()
 
@@ -143,25 +147,37 @@ class MediaTransferWindow(QDialog):
         layout.addWidget(self.help_btn)
 
     def _execute_transfer(self, preset_key):
+        logger.info(f"Media transfer action triggered for preset: '{preset_key}'")
+
+        # Refresh device paths on action trigger to capture newly connected devices
+        self.phone_path = detect_mtp_phone()
+        self.hdd_path = detect_external_hdd()
+
         if not self.phone_path:
+            logger.warning("Transfer failed: No connected MTP phone found.")
             QMessageBox.warning(self, "Brak telefonu", "Nie wykryto podłączonego telefonu przez USB (MTP).\n\nUpewnij się, że telefon jest podłączony kablem i wybrano w nim opcję 'Przesyłanie plików / MTP'.")
             return
 
         if not self.hdd_path:
+            logger.warning("Transfer failed: No connected external HDD found.")
             QMessageBox.warning(self, "Brak dysku HDD", "Nie wykryto podłączonego zewnętrznego dysku twardego.\n\nPodłącz dysk USB i spróbuj ponownie.")
             return
 
         delete_after = self.delete_toggle.isChecked()
         dst_dir = self.hdd_path / "ZDJECIA_DZIADKA"
 
+        logger.info(f"Scanning media for preset '{preset_key}'...")
         files = scan_media_preset(self.phone_path, preset_key)
         if not files:
+            logger.info(f"No files matching preset '{preset_key}' detected on phone.")
             QMessageBox.information(self, "Brak plików", "Nie znaleziono nowych plików do skopiowania w tej kategorii.")
             return
 
+        logger.info(f"Found {len(files)} files. Starting batch transfer. delete_after={delete_after}")
         self.status_label.setText(f"Kopiowanie {len(files)} plików...")
         res = batch_transfer_media(files, dst_dir, delete_after=delete_after)
 
+        logger.info(f"Batch transfer complete: {res['copied']} copied, {res['failed']} failed.")
         self.status_label.setText(f"✅ Skopiowano pomyślnie: {res['copied']} z {res['total']} plików!")
         QMessageBox.information(
             self,
@@ -178,6 +194,7 @@ class MediaTransferWindow(QDialog):
         self.cap_bar.setValue(int(100 - cap_info["free_pct"]))
 
     def _show_emergency_help(self):
+        logger.info("Grandson emergency help dialog shown.")
         msg = (
             "🆘 ZDALNA POMOC DLA DZIADKA 🆘\n\n"
             "Telefon kontaktowy do Wnuka: +48 123 456 789\n"

@@ -71,6 +71,7 @@ class SeniorDashboardWindow(QMainWindow):
         )
         self.resize(WINDOW_WIDTH, WINDOW_HEIGHT)
 
+        self._allow_exit = False
         self._current_wallpaper_pixmap = None
         self._init_ui()
         self._init_wallpaper()
@@ -80,8 +81,20 @@ class SeniorDashboardWindow(QMainWindow):
     def keyPressEvent(self, event):
         """Allow admin exit with Ctrl+Q (hidden shortcut for maintenance)."""
         if event.modifiers() == Qt.KeyboardModifier.ControlModifier and event.key() == Qt.Key.Key_Q:
+            logger.info("Admin exit shortcut Ctrl+Q pressed.")
+            self._allow_exit = True
             self.close()
         super().keyPressEvent(event)
+
+    def closeEvent(self, event):
+        """Guard to prevent accidental or unauthorized closing of the kiosk launcher."""
+        import os
+        if self._allow_exit or os.environ.get("SENIOR_MINT_TEST_MODE") == "1":
+            event.accept()
+            logger.info("Dashboard closed cleanly.")
+        else:
+            event.ignore()
+            logger.warning("Attempted to close kiosk launcher without admin privileges. Close event ignored.")
 
     def _init_ui(self):
         self.central = DashboardCentralWidget(self)
@@ -116,6 +129,9 @@ class SeniorDashboardWindow(QMainWindow):
 
         main_layout.addLayout(header_layout)
 
+        # --- Printer Widget (instantiated early to embed in the grid) ---
+        self.printer_widget = PrinterWidget(parent=self)
+
         # --- Main Tile Grid ---
         self.grid_widget = SeniorGridWidget(self)
         main_layout.addWidget(self.grid_widget, stretch=1)
@@ -127,11 +143,9 @@ class SeniorDashboardWindow(QMainWindow):
         self.btn_picker.setStyleSheet(self._button_style())
         self.btn_picker.clicked.connect(self._open_wallpaper_picker)
 
-        self.printer_widget = PrinterWidget(parent=self)
-
+        bottom_layout.addStretch()
         bottom_layout.addWidget(self.btn_picker)
         bottom_layout.addStretch()
-        bottom_layout.addWidget(self.printer_widget)
 
         main_layout.addLayout(bottom_layout)
 
