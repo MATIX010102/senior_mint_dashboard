@@ -474,3 +474,33 @@ def test_tier4_senior_launcher_full_workflow(qapp, wallpaper_dir, mock_cups_hpli
     # 5. Printer test page submission
     res = subprocess.run(["lpstat", "-p"], capture_output=True, text=True)
     assert res.returncode == 0
+
+
+def test_settings_dialog_city_change(qapp, tmp_path):
+    """Verifies SettingsDialog loads settings, saves selected city, and calls refresh."""
+    from senior_mint_dashboard.launcher.settings_dialog import SettingsDialog
+    from senior_mint_dashboard.launcher.widgets.weather_widget import WeatherWidget
+
+    # Setup temporary settings file path
+    with patch("senior_mint_dashboard.launcher.settings_dialog.SETTINGS_FILE", tmp_path / "user_settings.json"), \
+         patch("senior_mint_dashboard.launcher.widgets.weather_widget.SETTINGS_FILE", tmp_path / "user_settings.json"):
+        
+        weather = WeatherWidget()
+        dialog = SettingsDialog(weather_widget=weather)
+        
+        # Verify city combo populated
+        assert dialog.city_combo.count() > 0
+        
+        # Select another city, e.g. Kraków
+        dialog.city_combo.setCurrentText("Kraków")
+        
+        # Verify settings file written
+        settings_file = tmp_path / "user_settings.json"
+        assert settings_file.exists()
+        
+        data = json.loads(settings_file.read_text(encoding="utf-8"))
+        assert data.get("weather_city") == "Kraków"
+        
+        # Verify weather widget's current city changed
+        weather.refresh_location()
+        assert weather.current_city == "Kraków"

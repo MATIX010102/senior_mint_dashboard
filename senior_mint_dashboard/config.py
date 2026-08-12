@@ -27,6 +27,7 @@ WALLPAPER_DIR = HOME_DIR / "Obrazki" / "Tapety"
 CONFIG_DIR = HOME_DIR / ".config" / "senior_dashboard"
 CACHE_DIR = HOME_DIR / ".cache" / "senior_dashboard"
 VERSION_FILE = CONFIG_DIR / "version.json"
+SETTINGS_FILE = CONFIG_DIR / "user_settings.json"
 WEATHER_CACHE_FILE = CACHE_DIR / "weather_cache.json"
 
 # Slideshow Settings
@@ -103,3 +104,16 @@ GAMES = {
 
 BROWSER_COMMANDS = ["x-www-browser", "firefox", "chromium-browser", "google-chrome"]
 DEFAULT_BROWSER_HOMEPAGE = "https://www.google.pl"
+
+# Polish cities coordinates database for Open-Meteo
+POLISH_CITIES = {
+    "Warszawa": {"latitude": 52.2297, "longitude": 21.0122},
+    "Kraków": {"latitude": 50.0647, "longitude": 19.9450},
+    "Gdańsk": {"latitude": 54.3520, "longitude": 18.6466},
+    "Wrocław": {"latitude": 51.1079, "longitude": 17.0385},
+    "Poznań": {"latitude": 52.4064, "longitude": 16.9252},
+    "Łódź": {"latitude": 51.7592, "longitude": 19.4560},
+    "Szczecin": {"latitude": 53.4285, "longitude": 14.5528},
+    "Lublin": {"latitude": 51.2465, "longitude": 22.5684},
+    "Katowice": {"latitude": 50.2649, "longitude": 19.0238},
+}

@@ -22,6 +22,7 @@ from senior_mint_dashboard.launcher.wallpaper_manager import WallpaperManager
 from senior_mint_dashboard.launcher.widgets.clock_widget import ClockWidget
 from senior_mint_dashboard.launcher.widgets.weather_widget import WeatherWidget
 from senior_mint_dashboard.launcher.widgets.printer_widget import PrinterWidget
+from senior_mint_dashboard.launcher.settings_dialog import SettingsDialog
 
 logger = logging.getLogger("SeniorMintDashboard")
 
@@ -172,9 +173,13 @@ class SeniorDashboardWindow(QMainWindow):
         self.btn_picker.setStyleSheet(self._button_style())
         self.btn_picker.clicked.connect(self._open_wallpaper_picker)
 
-        bottom_layout.addStretch()
+        self.btn_settings = QPushButton("⚙️ Ustawienia i Aktualizacje", self)
+        self.btn_settings.setStyleSheet(self._button_style())
+        self.btn_settings.clicked.connect(self._open_settings_dialog)
+
         bottom_layout.addWidget(self.btn_picker)
         bottom_layout.addStretch()
+        bottom_layout.addWidget(self.btn_settings)
 
         main_layout.addLayout(bottom_layout)
 
@@ -232,6 +237,11 @@ class SeniorDashboardWindow(QMainWindow):
         result = self.wallpaper_manager.open_picker(self)
         if result:
             self._load_wallpaper(result)
+
+    def _open_settings_dialog(self):
+        logger.info("Opening Settings Dialog...")
+        dialog = SettingsDialog(weather_widget=self.weather_widget, parent=self)
+        dialog.exec()
 
     def _init_version_watcher(self):
         self.watcher = QFileSystemWatcher(self)

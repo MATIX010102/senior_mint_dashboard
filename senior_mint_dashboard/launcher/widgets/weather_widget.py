@@ -1,5 +1,6 @@
 """
 Senior Weather Widget (20pt) with Live Open-Meteo API Fetching & Offline JSON Cache Fallback.
+Supports configurable coordinates based on settings.
 """
 
 import json
@@ -12,7 +13,7 @@ from PyQt6.QtGui import QFont
 from PyQt6.QtWidgets import QWidget, QLabel, QVBoxLayout
 from PyQt6.QtNetwork import QNetworkAccessManager, QNetworkRequest
 
-from senior_mint_dashboard.config import WEATHER_CACHE_FILE, TYPOGRAPHY
+from senior_mint_dashboard.config import WEATHER_CACHE_FILE, TYPOGRAPHY, SETTINGS_FILE, POLISH_CITIES
 
 logger = logging.getLogger("SeniorMintDashboard")
 
@@ -39,6 +40,7 @@ class WeatherWidget(QWidget):
             parent = None
         super().__init__(parent)
         self.cache_file = cache_file or self.DEFAULT_CACHE_PATH
+        self.current_city = "Warszawa"
 
         self.temp_label = QLabel("--°C", self)
         self.condition_label = QLabel("Wczytywanie...", self)
@@ -83,6 +85,9 @@ class WeatherWidget(QWidget):
             content = self.cache_file.read_text(encoding="utf-8")
             data = json.loads(content)
             if isinstance(data, dict) and data.get("temp") is not None and data.get("condition") is not None:
+                # Ensure the cache shows the current configured city name if possible
+                if "city" in data:
+                    data["city"] = self.current_city
                 return data
             return dict(self.DEFAULT_FALLBACK_DATA)
         except (json.JSONDecodeError, OSError, ValueError):
@@ -120,16 +125,39 @@ class WeatherWidget(QWidget):
         weather_data = self.load_cache()
         self.update_display(weather_data)
 
+    def refresh_location(self) -> None:
+        """Reloads settings from file and triggers an immediate weather update."""
+        logger.info("Weather widget location refresh requested.")
+        self.update_weather()
+
     def update_weather(self) -> None:
         """Attempts to update weather. If offline/error occurs, loads offline JSON cache."""
+        # Load city configuration from user settings
+        city_name = "Warszawa"
+        lat = 52.2297
+        lon = 21.0122
+
+        if SETTINGS_FILE.exists():
+            try:
+                content = SETTINGS_FILE.read_text(encoding="utf-8")
+                settings_data = json.loads(content)
+                city = settings_data.get("weather_city", "Warszawa")
+                if city in POLISH_CITIES:
+                    city_name = city
+                    lat = POLISH_CITIES[city]["latitude"]
+                    lon = POLISH_CITIES[city]["longitude"]
+            except Exception as e:
+                logger.error(f"Failed to parse user settings file: {e}")
+
+        self.current_city = city_name
+
         if os.environ.get("SENIOR_MINT_TEST_MODE") == "1":
             logger.info("Test mode active. Skipping live weather API fetch.")
             self.load_and_display_cache()
             return
 
-        # Warsaw coordinates: lat=52.2297, lon=21.0122
-        url = "https://api.open-meteo.com/v1/forecast?latitude=52.2297&longitude=21.0122&current_weather=true"
-        logger.info(f"Sending asynchronous weather query to Open-Meteo: {url}")
+        url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current_weather=true"
+        logger.info(f"Sending asynchronous weather query for '{city_name}' (lat={lat}, lon={lon}) to Open-Meteo: {url}")
         
         request = QNetworkRequest(QUrl(url))
         request.setTransferTimeout(5000)  # 5 seconds timeout
@@ -163,7 +191,6 @@ class WeatherWidget(QWidget):
                 raise ValueError("Weather temperature or code data missing in response")
 
             # Map WMO weathercode to Polish condition labels
-            # Codes reference: https://open-meteo.com/en/docs
             conditions_map = {
                 0: "Słonecznie / Czyste niebo",
                 1: "Głównie bezchmurnie",
@@ -195,7 +222,7 @@ class WeatherWidget(QWidget):
             temp_str = f"+{temp_val}°C" if temp_val > 0 else f"{temp_val}°C"
 
             weather_info = {
-                "city": "Warszawa",
+                "city": self.current_city,
                 "temp": temp_str,
                 "condition": condition_text,
                 "icon": "weather_cloud.png"
