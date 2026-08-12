@@ -1,7 +1,8 @@
 """
 Settings Dialog for Senior Mint Dashboard.
 Allows Dziadek to configure basic options (like weather location), check version details,
-verify browser dependencies, and run asynchronous GitHub update checks with a dynamic reload option.
+verify browser dependencies, control system power (shutdown/reboot),
+and run asynchronous GitHub update checks with a dynamic reload option.
 """
 
 import os
@@ -44,7 +45,7 @@ class UpdateWorker(QThread):
 
 
 class InstallWorker(QThread):
-    """Background worker thread to install PyQt6 WebEngine via PolicyKit (pkexec)."""
+    """Background worker thread to install PyQt6 WebEngine via pip (venv) or pkexec apt (system python)."""
     finished = pyqtSignal(int, str)  # exit_code, error_msg
 
     def run(self):
@@ -54,25 +55,40 @@ class InstallWorker(QThread):
             self.finished.emit(0, "")
             return
 
-        pkexec = shutil.which("pkexec")
-        apt = shutil.which("apt-get")
-        if not pkexec or not apt:
-            self.finished.emit(-1, "Brak poleceń pkexec lub apt-get w systemie")
-            return
+        # Check if running in a virtual environment
+        is_venv = (sys.prefix != sys.base_prefix)
 
-        logger.info("Executing pkexec to update apt and install python3-pyqt6.qtwebengine...")
-        try:
-            # Chain commands: update repository, then install package
-            cmd = ["pkexec", "sh", "-c", "apt-get update && apt-get install -y python3-pyqt6.qtwebengine"]
-            res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
-            logger.info(f"Installation process finished with exit code {res.returncode}")
-            self.finished.emit(res.returncode, res.stderr)
-        except subprocess.TimeoutExpired:
-            logger.error("Installation command timed out.")
-            self.finished.emit(-2, "Przekroczono limit czasu instalacji (timeout)")
-        except Exception as e:
-            logger.error(f"Failed to execute installation: {e}")
-            self.finished.emit(-3, str(e))
+        if is_venv:
+            logger.info("Virtual environment detected. Using pip to install PyQt6-WebEngine...")
+            try:
+                cmd = [sys.executable, "-m", "pip", "install", "PyQt6-WebEngine"]
+                logger.info(f"Running command: {' '.join(cmd)}")
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+                logger.info(f"Pip install finished. Code={res.returncode}. Stderr={res.stderr}")
+                self.finished.emit(res.returncode, res.stderr)
+            except Exception as e:
+                logger.error(f"Pip installation failed: {e}", exc_info=True)
+                self.finished.emit(-4, str(e))
+        else:
+            logger.info("System Python detected. Using pkexec and apt-get...")
+            pkexec = shutil.which("pkexec")
+            apt = shutil.which("apt-get")
+            if not pkexec or not apt:
+                self.finished.emit(-1, "Brak poleceń pkexec lub apt-get w systemie")
+                return
+
+            try:
+                cmd = ["pkexec", "sh", "-c", "apt-get update && apt-get install -y python3-pyqt6.qtwebengine"]
+                logger.info(f"Running command: {' '.join(cmd)}")
+                res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+                logger.info(f"Apt install finished. Code={res.returncode}. Stderr={res.stderr}")
+                self.finished.emit(res.returncode, res.stderr)
+            except subprocess.TimeoutExpired:
+                logger.error("Apt install timed out.")
+                self.finished.emit(-2, "Przekroczono limit czasu instalacji (timeout)")
+            except Exception as e:
+                logger.error(f"Apt installation failed: {e}", exc_info=True)
+                self.finished.emit(-3, str(e))
 
 
 class SettingsDialog(QDialog):
@@ -83,7 +99,7 @@ class SettingsDialog(QDialog):
         self.weather_widget = weather_widget
         self.setWindowTitle("Ustawienia i Informacje")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setMinimumSize(600, 560)
+        self.setMinimumSize(600, 680)
         self.setStyleSheet(f"""
             QDialog {{
                 background-color: {PALETTE['BACKGROUND_DARK']};
@@ -183,6 +199,61 @@ class SettingsDialog(QDialog):
 
         layout.addWidget(self.web_frame)
 
+        # ----------------- Power Control Section -----------------
+        power_frame = QFrame(self)
+        power_frame.setStyleSheet(f"QFrame {{ border: 2px solid {PALETTE['CARD_BORDER']}; border-radius: 10px; padding: 10px; }}")
+        power_layout = QVBoxLayout(power_frame)
+        power_layout.setSpacing(8)
+
+        power_label = QLabel("🔌 Zarządzanie zasilaniem komputera:", power_frame)
+        power_label.setFont(QFont("Sans-Serif", 14, QFont.Weight.Bold))
+        power_layout.addWidget(power_label)
+
+        btn_power_layout = QHBoxLayout()
+        btn_power_layout.setSpacing(15)
+
+        self.btn_shutdown = QPushButton("🔌 Wyłącz komputer", power_frame)
+        self.btn_shutdown.setStyleSheet("""
+            QPushButton {
+                background-color: #dc3545;
+                color: white;
+                font-size: 14pt;
+                font-weight: bold;
+                padding: 12px;
+                border-radius: 8px;
+                border: 2px solid #b02a37;
+            }
+            QPushButton:hover {
+                background-color: #bb2d3b;
+            }
+        """)
+        self.btn_shutdown.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_shutdown.clicked.connect(self._shutdown_computer)
+
+        self.btn_reboot = QPushButton("🔄 Uruchom ponownie komputer", power_frame)
+        self.btn_reboot.setStyleSheet("""
+            QPushButton {
+                background-color: #fd7e14;
+                color: white;
+                font-size: 14pt;
+                font-weight: bold;
+                padding: 12px;
+                border-radius: 8px;
+                border: 2px solid #e8590c;
+            }
+            QPushButton:hover {
+                background-color: #f76707;
+            }
+        """)
+        self.btn_reboot.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_reboot.clicked.connect(self._reboot_computer)
+
+        btn_power_layout.addWidget(self.btn_shutdown)
+        btn_power_layout.addWidget(self.btn_reboot)
+        power_layout.addLayout(btn_power_layout)
+
+        layout.addWidget(power_frame)
+
         # ----------------- Updates and Version Section -----------------
         up_frame = QFrame(self)
         up_frame.setStyleSheet(f"QFrame {{ border: 2px solid {PALETTE['CARD_BORDER']}; border-radius: 10px; padding: 10px; }}")
@@ -225,7 +296,7 @@ class SettingsDialog(QDialog):
         self.btn_check_updates.clicked.connect(self._check_for_updates)
         action_layout.addWidget(self.btn_check_updates)
 
-        self.btn_restart = QPushButton("🔄 Uruchom ponownie", up_frame)
+        self.btn_restart = QPushButton("🔄 Uruchom ponownie program", up_frame)
         self.btn_restart.setStyleSheet("""
             QPushButton {
                 background-color: #28a745;
@@ -318,10 +389,16 @@ class SettingsDialog(QDialog):
             logger.error(f"Failed to save settings: {e}", exc_info=True)
 
     def _install_webengine(self):
-        """Launches the PolicyKit package installer background thread."""
+        """Launches the package installer background thread."""
         logger.info("User requested dynamic QtWebEngineWidgets package installation.")
         self.btn_install_web.setEnabled(False)
-        self.web_status_label.setText("Instalowanie... Wpisz hasło w wyświetlonym oknie systemowym.")
+        
+        # Adjust message based on environment
+        if sys.prefix != sys.base_prefix:
+            self.web_status_label.setText("Instalowanie biblioteki w środowisku wirtualnym (pip)... Proszę czekać.")
+        else:
+            self.web_status_label.setText("Instalowanie... Wpisz hasło w wyświetlonym oknie systemowym.")
+            
         self.web_status_label.setStyleSheet("font-size: 14pt; color: #ffc107;")
 
         self.install_worker = InstallWorker()
@@ -348,6 +425,41 @@ class SettingsDialog(QDialog):
                 "Błąd Instalacji",
                 f"Nie udało się zainstalować wbudowanej przeglądarki.\n\nKod błędu: {exit_code}\nBłąd: {error_msg}"
             )
+
+    def _shutdown_computer(self):
+        """Asks for confirmation and shuts down the computer using systemctl poweroff."""
+        reply = QMessageBox.question(
+            self,
+            "Wyłączenie komputera",
+            "Czy na pewno chcesz wyłączyć komputer?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            logger.info("User confirmed system shutdown. Executing systemctl poweroff...")
+            # Set allow exit flags so the app closes clean
+            win = self.window()
+            if win and hasattr(win, "_allow_exit"):
+                win._allow_exit = True
+                win.close()
+            subprocess.run(["systemctl", "poweroff"])
+
+    def _reboot_computer(self):
+        """Asks for confirmation and reboots the computer using systemctl reboot."""
+        reply = QMessageBox.question(
+            self,
+            "Ponowne uruchomienie",
+            "Czy na pewno chcesz ponownie uruchomić komputer?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.No
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            logger.info("User confirmed system reboot. Executing systemctl reboot...")
+            win = self.window()
+            if win and hasattr(win, "_allow_exit"):
+                win._allow_exit = True
+                win.close()
+            subprocess.run(["systemctl", "reboot"])
 
     def _check_for_updates(self):
         """Disables controls and spawns QThread worker to check updates in the background."""
@@ -382,7 +494,6 @@ class SettingsDialog(QDialog):
     def _restart_app(self):
         """Reloads current python process immediately."""
         logger.info("Application reload triggered from settings dialog restart button.")
-        # Walk up to main window to set clean exit
         win = self.window()
         if win and hasattr(win, "_allow_exit"):
             win._allow_exit = True

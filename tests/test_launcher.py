@@ -504,3 +504,21 @@ def test_settings_dialog_city_change(qapp, tmp_path):
         # Verify weather widget's current city changed
         weather.refresh_location()
         assert weather.current_city == "Kraków"
+
+
+def test_settings_dialog_power_actions(qapp):
+    """Verifies SettingsDialog power action triggers execute systemctl poweroff and reboot."""
+    from senior_mint_dashboard.launcher.settings_dialog import SettingsDialog
+    from PyQt6.QtWidgets import QMessageBox
+    dialog = SettingsDialog()
+
+    with patch("subprocess.run") as mock_run, \
+         patch("PyQt6.QtWidgets.QMessageBox.question", return_value=QMessageBox.StandardButton.Yes):
+        
+        # Test shutdown trigger
+        dialog._shutdown_computer()
+        mock_run.assert_any_call(["systemctl", "poweroff"])
+
+        # Test reboot trigger
+        dialog._reboot_computer()
+        mock_run.assert_any_call(["systemctl", "reboot"])
