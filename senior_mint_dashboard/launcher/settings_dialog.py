@@ -1,13 +1,15 @@
 """
 Settings Dialog for Senior Mint Dashboard.
 Allows Dziadek to configure basic options (like weather location), check version details,
-and run asynchronous GitHub update checks with a dynamic reload option.
+verify browser dependencies, and run asynchronous GitHub update checks with a dynamic reload option.
 """
 
 import os
 import sys
 import json
 import logging
+import subprocess
+import shutil
 from pathlib import Path
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox, QFrame, QMessageBox
@@ -41,6 +43,38 @@ class UpdateWorker(QThread):
             self.finished.emit({'success': False, 'updated': False, 'error': str(e)})
 
 
+class InstallWorker(QThread):
+    """Background worker thread to install PyQt6 WebEngine via PolicyKit (pkexec)."""
+    finished = pyqtSignal(int, str)  # exit_code, error_msg
+
+    def run(self):
+        import os
+        if os.environ.get("SENIOR_MINT_TEST_MODE") == "1":
+            logger.info("Test mode active. Mocking successful package installation.")
+            self.finished.emit(0, "")
+            return
+
+        pkexec = shutil.which("pkexec")
+        apt = shutil.which("apt-get")
+        if not pkexec or not apt:
+            self.finished.emit(-1, "Brak poleceń pkexec lub apt-get w systemie")
+            return
+
+        logger.info("Executing pkexec to update apt and install python3-pyqt6.qtwebengine...")
+        try:
+            # Chain commands: update repository, then install package
+            cmd = ["pkexec", "sh", "-c", "apt-get update && apt-get install -y python3-pyqt6.qtwebengine"]
+            res = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
+            logger.info(f"Installation process finished with exit code {res.returncode}")
+            self.finished.emit(res.returncode, res.stderr)
+        except subprocess.TimeoutExpired:
+            logger.error("Installation command timed out.")
+            self.finished.emit(-2, "Przekroczono limit czasu instalacji (timeout)")
+        except Exception as e:
+            logger.error(f"Failed to execute installation: {e}")
+            self.finished.emit(-3, str(e))
+
+
 class SettingsDialog(QDialog):
     """Senior-friendly Settings Panel with large touch controls."""
 
@@ -49,7 +83,7 @@ class SettingsDialog(QDialog):
         self.weather_widget = weather_widget
         self.setWindowTitle("Ustawienia i Informacje")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint | Qt.WindowType.Dialog)
-        self.setMinimumSize(600, 480)
+        self.setMinimumSize(600, 560)
         self.setStyleSheet(f"""
             QDialog {{
                 background-color: {PALETTE['BACKGROUND_DARK']};
@@ -80,13 +114,15 @@ class SettingsDialog(QDialog):
         """)
 
         self.update_worker = None
+        self.install_worker = None
         self._init_ui()
         self._load_current_settings()
+        self._update_webengine_status()
 
     def _init_ui(self):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
-        layout.setSpacing(20)
+        layout.setSpacing(16)
 
         # Header Title
         title = QLabel("⚙️ Ustawienia Pulpitu", self)
@@ -115,6 +151,37 @@ class SettingsDialog(QDialog):
         loc_layout.addWidget(self.city_combo)
 
         layout.addWidget(loc_frame)
+
+        # ----------------- WebEngine Status Section -----------------
+        self.web_frame = QFrame(self)
+        self.web_frame.setStyleSheet(f"QFrame {{ border: 2px solid {PALETTE['CARD_BORDER']}; border-radius: 10px; padding: 10px; }}")
+        web_layout = QVBoxLayout(self.web_frame)
+        web_layout.setSpacing(8)
+
+        self.web_status_label = QLabel(self.web_frame)
+        self.web_status_label.setFont(QFont("Sans-Serif", 14, QFont.Weight.Bold))
+        self.web_status_label.setWordWrap(True)
+        web_layout.addWidget(self.web_status_label)
+
+        self.btn_install_web = QPushButton("🔧 Zainstaluj wbudowaną przeglądarkę", self.web_frame)
+        self.btn_install_web.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {PALETTE['BUTTON_BLUE']};
+                color: #11111B;
+                font-size: 14pt;
+                font-weight: bold;
+                padding: 10px 20px;
+                border-radius: 8px;
+            }}
+            QPushButton:hover {{
+                background-color: {PALETTE['BUTTON_HOVER']};
+            }}
+        """)
+        self.btn_install_web.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn_install_web.clicked.connect(self._install_webengine)
+        web_layout.addWidget(self.btn_install_web)
+
+        layout.addWidget(self.web_frame)
 
         # ----------------- Updates and Version Section -----------------
         up_frame = QFrame(self)
@@ -223,6 +290,18 @@ class SettingsDialog(QDialog):
         if index >= 0:
             self.city_combo.setCurrentIndex(index)
 
+    def _update_webengine_status(self):
+        """Checks if PyQt6 WebEngine is installed and updates labels/buttons dynamically."""
+        from senior_mint_dashboard.launcher.webview.browser_window import is_webengine_available
+        if is_webengine_available():
+            self.web_status_label.setText("✅ Wbudowana przeglądarka: Zainstalowana (Otwiera się w programie)")
+            self.web_status_label.setStyleSheet("font-size: 14pt; color: #28a745; font-weight: bold;")
+            self.btn_install_web.setVisible(False)
+        else:
+            self.web_status_label.setText("⚠️ Brak wbudowanej przeglądarki (Gmail/Onet otworzą się w nowym oknie)")
+            self.web_status_label.setStyleSheet("font-size: 14pt; color: #ff922b; font-weight: bold;")
+            self.btn_install_web.setVisible(True)
+
     def _on_city_changed(self, city_name):
         """Saves selected city to user settings and notifies weather widget."""
         logger.info(f"User changed weather location setting to: '{city_name}'")
@@ -238,11 +317,43 @@ class SettingsDialog(QDialog):
         except Exception as e:
             logger.error(f"Failed to save settings: {e}", exc_info=True)
 
+    def _install_webengine(self):
+        """Launches the PolicyKit package installer background thread."""
+        logger.info("User requested dynamic QtWebEngineWidgets package installation.")
+        self.btn_install_web.setEnabled(False)
+        self.web_status_label.setText("Instalowanie... Wpisz hasło w wyświetlonym oknie systemowym.")
+        self.web_status_label.setStyleSheet("font-size: 14pt; color: #ffc107;")
+
+        self.install_worker = InstallWorker()
+        self.install_worker.finished.connect(self._on_installation_finished)
+        self.install_worker.start()
+
+    def _on_installation_finished(self, exit_code, error_msg):
+        """Refreshes status and alerts user of result."""
+        self.btn_install_web.setEnabled(True)
+        if exit_code == 0:
+            logger.info("Browser packages installed successfully.")
+            self._update_webengine_status()
+            QMessageBox.information(
+                self,
+                "Instalacja Zakończona",
+                "Wbudowana przeglądarka została pomyślnie zainstalowana!\n\nOd teraz Onet, poczta i bankowość będą otwierać się wewnątrz programu."
+            )
+        else:
+            logger.error(f"Browser installation failed (exit code {exit_code}): {error_msg}")
+            self.web_status_label.setText("❌ Instalacja nie powiodła się. Spróbuj ponownie lub poproś Wnuka o pomoc.")
+            self.web_status_label.setStyleSheet("font-size: 14pt; color: #dc3545;")
+            QMessageBox.warning(
+                self,
+                "Błąd Instalacji",
+                f"Nie udało się zainstalować wbudowanej przeglądarki.\n\nKod błędu: {exit_code}\nBłąd: {error_msg}"
+            )
+
     def _check_for_updates(self):
         """Disables controls and spawns QThread worker to check updates in the background."""
         logger.info("User requested manual check for updates.")
         self.btn_check_updates.setEnabled(False)
-        self.update_status.setText("Checking for updates... Please wait (Sprawdzanie aktualizacji...)")
+        self.update_status.setText("Sprawdzanie aktualizacji... Proszę czekać.")
         self.update_status.setStyleSheet("font-size: 12pt; color: #ffc107;")
 
         repo_dir = Path(__file__).resolve().parent.parent.parent

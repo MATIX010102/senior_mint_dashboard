@@ -104,15 +104,21 @@ class SeniorGridWidget(QWidget):
 
     def _launch_webview(self, key):
         logger.info(f"Launching webview preset for key: '{key}'")
-        from senior_mint_dashboard.launcher.webview.browser_window import SeniorBrowserWindow
+        from senior_mint_dashboard.launcher.webview.browser_window import is_webengine_available, launch_system_browser
         preset = WEB_LAUNCHERS.get(key)
         if preset:
-            try:
-                win = SeniorBrowserWindow(preset["url"], title=preset["title"], parent=self)
-                win.show()
-                logger.info(f"SeniorBrowserWindow shown for {preset['title']}")
-            except Exception as e:
-                logger.error(f"Error instantiating or showing SeniorBrowserWindow: {e}", exc_info=True)
+            if is_webengine_available():
+                try:
+                    from senior_mint_dashboard.launcher.webview.browser_window import SeniorBrowserWindow
+                    win = SeniorBrowserWindow(preset["url"], title=preset["title"], parent=self)
+                    win.show()
+                    logger.info(f"SeniorBrowserWindow shown for {preset['title']}")
+                except Exception as e:
+                    logger.error(f"Error instantiating or showing SeniorBrowserWindow: {e}", exc_info=True)
+                    launch_system_browser(preset["url"])
+            else:
+                logger.info("QtWebEngine is not available. Redirecting to external system browser directly.")
+                launch_system_browser(preset["url"])
         else:
             logger.error(f"No webview preset found for key: '{key}'")
 

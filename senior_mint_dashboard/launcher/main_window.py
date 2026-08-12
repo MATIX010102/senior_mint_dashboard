@@ -79,7 +79,20 @@ class SeniorDashboardWindow(QMainWindow):
         self._init_ui()
         self._init_wallpaper()
         self._init_version_watcher()
+        self._disable_system_panel()
         logger.info("SeniorDashboardWindow initialized successfully.")
+
+    def _disable_system_panel(self):
+        """Temporarily stops xfce4-panel to lock down the kiosk session."""
+        import os
+        import subprocess
+        if os.environ.get("SENIOR_MINT_TEST_MODE") == "1":
+            return
+        try:
+            logger.info("Stopping xfce4-panel to secure kiosk mode...")
+            subprocess.Popen(["killall", "xfce4-panel"])
+        except Exception as e:
+            logger.warning(f"Could not kill xfce4-panel: {e}")
 
     def keyPressEvent(self, event):
         """Allow admin exit with Ctrl+Q (hidden shortcut for maintenance)."""
@@ -92,8 +105,15 @@ class SeniorDashboardWindow(QMainWindow):
     def closeEvent(self, event):
         """Guard to prevent accidental or unauthorized closing of the kiosk launcher."""
         import os
+        import subprocess
         if self._allow_exit or os.environ.get("SENIOR_MINT_TEST_MODE") == "1":
             event.accept()
+            if os.environ.get("SENIOR_MINT_TEST_MODE") != "1":
+                try:
+                    logger.info("Restoring xfce4-panel...")
+                    subprocess.Popen(["xfce4-panel"])
+                except Exception as e:
+                    logger.warning(f"Could not restore xfce4-panel: {e}")
             logger.info("Dashboard closed cleanly.")
         else:
             event.ignore()
@@ -250,9 +270,19 @@ class SeniorDashboardWindow(QMainWindow):
             self.watcher.fileChanged.connect(self._on_version_changed)
 
     def _on_version_changed(self, path):
-        logger.info("Local version.json file changed. Showing update restart banner.")
-        self.banner_text.setText("ℹ️ Zaktualizowano program. Kliknij obok, aby wczytać nowości:")
-        self.version_banner.setVisible(True)
+        logger.info("Local version.json file changed. Checking status...")
+        import json
+        if VERSION_FILE.exists():
+            try:
+                data = json.loads(VERSION_FILE.read_text(encoding="utf-8"))
+                if data.get("status") == "updated":
+                    logger.info("Update status is 'updated'. Showing banner.")
+                    self.banner_text.setText("ℹ️ Zaktualizowano program. Kliknij obok, aby wczytać nowości:")
+                    self.version_banner.setVisible(True)
+                    return
+            except Exception as e:
+                logger.error(f"Failed to read version.json in watcher: {e}")
+        self.version_banner.setVisible(False)
 
     def _restart_application(self):
         """Restarts the launcher application cleanly."""

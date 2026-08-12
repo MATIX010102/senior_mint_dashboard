@@ -39,6 +39,16 @@ def launch_system_browser(url: str = "https://www.google.pl") -> bool:
         return False
 
 
+def is_webengine_available() -> bool:
+    """Checks if QtWebEngineWidgets can be imported successfully."""
+    try:
+        from PyQt6.QtWebEngineWidgets import QWebEngineView
+        return True
+    except Exception as e:
+        logger.warning(f"QtWebEngine check failed: {e}. Embedded webview is not available.")
+        return False
+
+
 class SeniorBrowserWindow(QMainWindow):
     """
     Kiosk-friendly web browser window featuring SeniorNavBar and lazy-loaded QtWebEngine.
